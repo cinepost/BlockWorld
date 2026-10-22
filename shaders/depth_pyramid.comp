@@ -1,0 +1,48 @@
+#version 450
+// Portable Vulkan compute. GLSL avoids Naga 24's ArrayStride decoration on
+// Workgroup arrays, rejected by newer SPIR-V validation implementations.
+layout(local_size_x=8,local_size_y=8) in;
+layout(set=0,binding=4,std140) uniform Params {
+ vec4 eye,forward,right,up;ivec4 origin;uvec4 dims,screen;vec4 sun,effects;
+ uvec4 flags,meshes;vec4 water,optics,scene_min,scene_max;uvec4 acceleration;
+ vec4 light_right,light_up,cascade_center,shadow_controls;vec4 soft;uvec4 history;mat4 previous_vp;vec4 sky_light,sky_build;uvec4 sky_state;
+} p;
+layout(set=0,binding=18,std430) buffer Depth {vec2 depth_pyramid[];};
+layout(push_constant) uniform Dispatch {uvec4 value;} dispatch;
+shared vec2 tile[64];
+uvec3 depth_level(uint level) {
+ uvec2 size=p.screen.xy;uint offset=0;
+ for(uint l=0;l<level;l++){offset+=size.x*size.y;size=(size+1)/2;}
+ return uvec3(size,offset);
+}
+vec2 merge_depth(vec2 a,vec2 b) {return vec2(min(a.x,b.x),max(a.y,b.y));}
+void main() {
+ // One group emits four levels from a 16x16 tile. Every lane participates,
+ // including padded lanes at odd-sized image edges.
+ uint level=dispatch.value.x;uvec3 source=depth_level(level);
+ uvec2 local=gl_LocalInvocationID.xy,group=gl_WorkGroupID.xy;
+ uvec2 pixel=group*8+local;vec2 bounds=vec2(1e30,-1e30);
+ for(uint y=0;y<2;y++)for(uint x=0;x<2;x++) {
+  uvec2 q=pixel*2+uvec2(x,y);
+  if(all(lessThan(q,source.xy)))bounds=merge_depth(bounds,depth_pyramid[source.z+q.x+q.y*source.x]);
+ }
+ uint lane=local.x+local.y*8;tile[lane]=bounds;
+ uvec3 first=depth_level(level+1);
+ if(all(lessThan(pixel,first.xy)))depth_pyramid[first.z+pixel.x+pixel.y*first.x]=bounds;
+ for(uint step=1;step<4;step++) {
+  barrier();bool participates=all(lessThan(local,uvec2(8>>step)));
+  if(participates) {
+   uint i=local.x*2+local.y*16;
+   bounds=merge_depth(merge_depth(tile[i],tile[i+1]),merge_depth(tile[i+8],tile[i+9]));
+  }
+  barrier();
+  if(participates) {
+   tile[lane]=bounds;
+   if(level+step+1<=p.acceleration.w) {
+    uvec3 destination=depth_level(level+step+1);
+    uvec2 q=group*(8>>step)+local;
+    if(all(lessThan(q,destination.xy)))depth_pyramid[destination.z+q.x+q.y*destination.x]=bounds;
+   }
+  }
+ }
+}

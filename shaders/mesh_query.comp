@@ -1,0 +1,264 @@
+#version 460
+#extension GL_EXT_ray_query : require
+#ifndef SINGLE_ATLAS
+#extension GL_EXT_nonuniform_qualifier : require
+#endif
+layout(local_size_x=8,local_size_y=8) in;
+struct Hit {vec4 normal_depth;vec2 uv;uint material;uint valid;vec4 water_normal_depth;vec4 water;};
+struct Triangle {vec4 a;vec4 b;vec4 c;vec4 uv01;vec2 uv2;uint material;uint flags;};
+struct Object {mat4 world;vec4 low;vec4 high;uvec4 info;};
+struct MeshHit {vec4 normal_depth;vec2 uv;uint material;uint flags;uvec4 ids;};
+struct Material {uint flags;float alpha_cutoff;float ao_weight;uint pad;};
+layout(set=0,binding=4,std140) uniform Params {
+ vec4 eye,forward,right,up;ivec4 origin;uvec4 dims,screen;vec4 sun,effects;uvec4 flags,meshes;vec4 water,optics,scene_min,scene_max;uvec4 acceleration;vec4 light_right,light_up,cascade_center,shadow_controls;vec4 soft;uvec4 history;mat4 previous_vp;vec4 sky_light,sky_build;uvec4 sky_state;vec4 display;vec4 lod;vec4 gi;vec4 wave_detail;vec4 caustics;vec4 caustic_map;
+} p;
+layout(set=0,binding=3,std430) readonly buffer Atlas {uint texture_records[];};
+layout(set=0,binding=8,std430) readonly buffer Objects {Object objects[];};
+layout(set=0,binding=9,std430) readonly buffer Triangles {Triangle triangles[];};
+layout(set=0,binding=13,std430) readonly buffer Materials {Material materials[];};
+layout(set=0,binding=12) uniform accelerationStructureEXT scene;
+layout(set=0,binding=1,std430) readonly buffer Hits {Hit hits[];};
+layout(set=0,binding=17,std430) buffer Aux {uint aux[];};
+#ifdef SHADOW
+layout(set=0,binding=11,std430) writeonly buffer Shadows {vec2 mesh_shadows[];};
+#else
+layout(set=0,binding=10,std430) writeonly buffer MeshHits {MeshHit mesh_hits[];};
+#endif
+vec3 ray_at(uvec2 pixel) {
+ vec2 xy=(vec2(pixel)+0.5)/vec2(p.screen.xy)*2.0-1.0;
+ return normalize(p.forward.xyz+p.right.xyz*xy.x*p.eye.w*p.forward.w-p.up.xyz*xy.y*p.forward.w);
+}
+#ifdef SINGLE_ATLAS
+layout(set=0,binding=24) uniform texture2D pack_images;
+#else
+layout(set=0,binding=24) uniform texture2D pack_images[8];
+#endif
+layout(set=0,binding=25) uniform sampler pack_sampler;
+vec4 pack_texel(uint page,uvec2 origin,vec2 uv,bool linear_filter) {
+#ifdef SINGLE_ATLAS
+ #define PACK_IMAGE pack_images
+#else
+ #define PACK_IMAGE pack_images[nonuniformEXT(page)]
+#endif
+ vec2 local=fract(uv)*16;
+ if(linear_filter)return textureLod(sampler2D(PACK_IMAGE,pack_sampler),(vec2(origin)+local)/vec2(textureSize(sampler2D(PACK_IMAGE,pack_sampler),0)),0);
+ return texelFetch(sampler2D(PACK_IMAGE,pack_sampler),ivec2(origin+min(uvec2(local),uvec2(15))),0);
+}
+bool covered(uint material,vec2 uv) {
+ if(p.meshes.w==0 || (materials[material-1].flags&1)==0) return true;
+ uint r=(material-1)*72;uint flags=texture_records[r+3];
+ vec4 a=pack_texel(texture_records[r+2],uvec2(texture_records[r],texture_records[r+1]),uv,(flags&4)!=0);
+ float blend=uintBitsToFloat(texture_records[r+7]);
+ if(blend>0)a=mix(a,pack_texel(texture_records[r+6],uvec2(texture_records[r+4],texture_records[r+5]),uv,(flags&4)!=0),blend);
+ return a.a>=materials[material-1].alpha_cutoff;
+}
+
+bool scene_box(vec3 origin,vec3 ray,float limit) {
+ float near=0,far=limit;
+ for(uint a=0;a<3;a++) {
+  if(abs(ray[a])<0.000001) {if(origin[a]<p.scene_min[a] || origin[a]>p.scene_max[a])return false;}
+  else {float t1=(p.scene_min[a]-origin[a])/ray[a],t2=(p.scene_max[a]-origin[a])/ray[a];near=max(near,min(t1,t2));far=min(far,max(t1,t2));}
+ }
+ return near<=far;
+}
+layout(set=0,binding=27,std430) readonly buffer EntityPlayers {vec4 entity_players[];};
+bool entity_in_range(vec3 point) {
+ if(entity_players[0].y<0.5)return true;
+ for(uint i=0;i<floatBitsToUint(entity_players[0].x);i++)if(all(lessThanEqual(abs(point-entity_players[i+1].xyz),vec3(32))))return true;
+ return false;
+}
+MeshHit query_mesh(vec3 origin,vec3 direction,float limit) {
+ MeshHit result=MeshHit(vec4(0,0,0,limit),vec2(0),0,0,uvec4(0));
+ if(p.meshes.x==0 || limit<=0.001 || !scene_box(origin,direction,limit)) return result;
+ uint mask=(p.meshes.y!=0?1u:0u)|(p.meshes.z!=0?2u:0u);
+ rayQueryEXT query;
+ rayQueryInitializeEXT(query,scene,entity_players[0].y>0.5?gl_RayFlagsNoOpaqueEXT:0,mask,origin,0.001,direction,limit);
+ while(rayQueryProceedEXT(query)) {
+  if(rayQueryGetIntersectionTypeEXT(query,false)!=gl_RayQueryCandidateIntersectionTriangleEXT) continue;
+  uint oi=rayQueryGetIntersectionInstanceCustomIndexEXT(query,false);
+  if(objects[oi].info.z==0u && !entity_in_range(objects[oi].world[3].xyz))continue;
+  uint primitive=rayQueryGetIntersectionPrimitiveIndexEXT(query,false);
+  Triangle tri=triangles[objects[oi].info.x+primitive];
+  vec2 bary=rayQueryGetIntersectionBarycentricsEXT(query,false);
+  vec2 uv=tri.uv01.xy*(1.0-bary.x-bary.y)+tri.uv01.zw*bary.x+tri.uv2*bary.y;
+  if(covered(tri.material,uv)) rayQueryConfirmIntersectionEXT(query);
+ }
+ if(rayQueryGetIntersectionTypeEXT(query,true)!=gl_RayQueryCommittedIntersectionNoneEXT) {
+  uint oi=rayQueryGetIntersectionInstanceCustomIndexEXT(query,true);
+  uint primitive=rayQueryGetIntersectionPrimitiveIndexEXT(query,true);
+  Object object=objects[oi];Triangle tri=triangles[object.info.x+primitive];
+  vec2 bary=rayQueryGetIntersectionBarycentricsEXT(query,true);
+  vec2 uv=tri.uv01.xy*(1.0-bary.x-bary.y)+tri.uv01.zw*bary.x+tri.uv2*bary.y;
+  vec3 a=(object.world*vec4(tri.a.xyz,1)).xyz,b=(object.world*vec4(tri.b.xyz,1)).xyz,c=(object.world*vec4(tri.c.xyz,1)).xyz;
+  vec3 normal=normalize(cross(b-a,c-a));if(dot(normal,direction)>0)normal=-normal;
+  uint flags=1u|4u|((materials[tri.material-1].flags&1u)<<1u)|((oi+1u)<<8u);
+  result=MeshHit(vec4(normal,rayQueryGetIntersectionTEXT(query,true)),fract(uv),tri.material,flags,uvec4(oi,primitive,0,p.screen.w>>1));
+ }
+ return result;
+}
+layout(set=0,binding=19,std430) readonly buffer Cascades {uint shadow_cascades[];};
+uint ordered_depth(float v) {uint bits=floatBitsToUint(v);return (bits&0x80000000u)!=0u?~bits:bits^0x80000000u;}
+bool cascade_clear(vec3 point) {
+ if(p.acceleration.y==0u)return false;
+ vec3 v=point-p.cascade_center.xyz;vec2 xy=vec2(dot(v,p.light_right.xyz),dot(v,p.light_up.xyz));
+ for(uint c=0;c<4;c++) {
+  float r=c==3?max(432.0,p.cascade_center.w):16.0*pow(3.0,float(c));vec2 uv=xy/(2*r)+0.5;
+  if(any(lessThan(uv,vec2(0)))||any(greaterThanEqual(uv,vec2(1))))continue;
+  uvec2 q=min(uvec2(uv*128),uvec2(127));
+  return shadow_cascades[q.x+128*q.y+16384*(c+4)]<ordered_depth(dot(v,p.sun.xyz)-0.002);
+ }
+ return false;
+}
+
+#ifdef SHADOW_CSM
+layout(set=0,binding=20,std430) writeonly buffer FarDepth {uint far_depth[];};
+#else
+layout(set=0,binding=20,std430) readonly buffer FarDepth {uint far_depth[];};
+#endif
+float radius(uint c){return c==3?max(432.0,p.cascade_center.w):16.0*pow(3.0,float(c));}
+vec2 cascade_offset(uint c) {
+ float texel=2*radius(c)/float(p.sky_state.w);
+ vec2 center=vec2(dot(p.cascade_center.xyz,p.light_right.xyz),dot(p.cascade_center.xyz,p.light_up.xyz));
+ return floor(center/texel+0.5)*texel-center;
+}
+#ifndef SHADOW_CSM
+float decode_depth(uint key) {return uintBitsToFloat((key&0x80000000u)!=0u?key^0x80000000u:~key);}
+float shadow_blend(vec3 point) {
+ if(p.shadow_controls.y<0.5)return 0;
+ if(p.shadow_controls.y>1.5)return 1;
+ float end=max(0.001,p.shadow_controls.x);
+ return smoothstep(max(0,end-8),end,distance(point,p.eye.xyz));
+}
+uint shadow_hash(uint h) {h=(h^(h>>16))*0x7feb352du;h=(h^(h>>15))*0x846ca68bu;return h^(h>>16);}
+uint shadow_key(ivec2 pixel,uint c,bool polygon) {
+ if(any(lessThan(pixel,ivec2(0)))||any(greaterThanEqual(pixel,ivec2(int(p.sky_state.w)))))return 0;
+ return far_depth[uint(pixel.x+pixel.y*int(p.sky_state.w))+(p.sky_state.w*p.sky_state.w)*(c+(polygon?4u:0u))];
+}
+float shadow_compare(ivec2 pixel,vec2 xy,vec2 plane,float z,float r,uint c,bool polygon) {
+ vec2 sample_xy=((vec2(pixel)+0.5)/float(p.sky_state.w)*2-1)*r;
+ float receiver=z-dot(plane,sample_xy-xy)+0.02;uint key=shadow_key(pixel,c,polygon);
+ return key==0||decode_depth(key)<=receiver?1:0;
+}
+float shadow_bilinear(vec2 at,vec2 xy,vec2 plane,float z,float r,uint c,bool polygon) {
+ ivec2 base=ivec2(floor(at));vec2 f=fract(at);
+ float a=shadow_compare(base,xy,plane,z,r,c,polygon),b=shadow_compare(base+ivec2(1,0),xy,plane,z,r,c,polygon);
+ float d=shadow_compare(base+ivec2(0,1),xy,plane,z,r,c,polygon),e=shadow_compare(base+ivec2(1,1),xy,plane,z,r,c,polygon);
+ return mix(mix(a,b,f.x),mix(d,e,f.x),f.y);
+}
+float shadow_search_world(vec3 point,bool polygon) {
+ float top=polygon?p.scene_max.y:p.scene_max.w;
+ float gap=max(0,top-point.y)/max(p.sun.y-tan(p.soft.x),0.01);
+ return tan(p.soft.x)*gap;
+}
+float shadow_pattern_angle(vec3 point) {
+ vec3 delta=point-p.eye.xyz;float depth=max(0.001,dot(delta,p.forward.xyz));
+ vec2 uv=vec2(dot(delta,p.right.xyz)/(depth*p.eye.w*p.forward.w),-dot(delta,p.up.xyz)/(depth*p.forward.w))*0.5+0.5;
+ ivec2 pixel=ivec2(floor(uv*vec2(p.screen.xy)));
+ uint seed=shadow_hash(uint(pixel.x)^shadow_hash(uint(pixel.y))^p.history.z*0x9e3779b9u);
+ return float(seed&0xffffffu)/16777216.0*6.283185307;
+}
+float sample_shadow_cascade(vec3 point,vec3 normal,uint c,bool polygon) {
+ vec3 v=point-p.cascade_center.xyz;float r=radius(c);
+ vec2 xy=vec2(dot(v,p.light_right.xyz),dot(v,p.light_up.xyz))-cascade_offset(c);
+ vec2 center=(xy/(2*r)+0.5)*float(p.sky_state.w)-0.5;ivec2 q=ivec2(floor(center+0.5));
+ float texel=2*r/float(p.sky_state.w),z=dot(v,p.sun.xyz);
+ vec2 plane=vec2(dot(normal,p.light_right.xyz),dot(normal,p.light_up.xyz))/max(dot(normal,p.sun.xyz),0.01);
+ if(p.soft.y<0.5)return shadow_bilinear(center,xy,plane,z,r,c,polygon);
+ float blocker_sum=0,blockers=0,search=max(1,shadow_search_world(point,polygon)/texel);
+ for(uint i=0;i<25;i++) {
+  ivec2 pixel=q+ivec2(int(i%3)-1,int(i/3)-1);
+  if(i>=9){if(search<=1.5)break;float k=float(i-9),angle=k*2.39996323;pixel=ivec2(floor(center+vec2(cos(angle),sin(angle))*sqrt((k+0.5)/16)*search+0.5));}
+  uint key=shadow_key(pixel,c,polygon);
+  vec2 sample_xy=((vec2(pixel)+0.5)/float(p.sky_state.w)*2-1)*r;
+  float receiver=z-dot(plane,sample_xy-xy);
+  if(key!=0){float gap=decode_depth(key)-receiver;if(gap>0.02){blocker_sum+=gap;blockers+=1;}}
+ }
+ if(blockers==0)return 1;
+ float footprint=max(0.5,tan(p.soft.x)*(blocker_sum/blockers)/texel);
+ if(footprint<=0.5)return shadow_bilinear(center,xy,plane,z,r,c,polygon);
+ uint count=footprint>4?32u:16u;float phase=footprint>4?shadow_pattern_angle(point):0.35,visibility=0;
+ for(uint i=0;i<count;i++) {
+  float angle=float(i)*2.39996323+phase;
+  vec2 offset=vec2(cos(angle),sin(angle))*sqrt((float(i)+0.5)/float(count))*footprint;
+  visibility+=shadow_bilinear(center+offset,xy,plane,z,r,c,polygon);
+ }
+ return visibility/float(count);
+}
+float far_sunlight(vec3 point,vec3 normal,bool polygon) {
+ if(p.soft.y<0.5 && polygon && cascade_clear(point))return 1;
+ vec3 v=point-p.cascade_center.xyz;vec2 xy=vec2(dot(v,p.light_right.xyz),dot(v,p.light_up.xyz));
+ for(uint c=0;c<4;c++) {
+  vec2 d=abs(xy-cascade_offset(c));float guard=p.soft.y>0.5?shadow_search_world(point,polygon):0;float extent=(max(d.x,d.y)+guard)/radius(c);
+  if(extent>=0.98)continue;
+  float a=sample_shadow_cascade(point,normal,c,polygon);
+  return c<3?mix(a,sample_shadow_cascade(point,normal,c+1,polygon),smoothstep(0.75,0.95,extent)):a;
+ }
+ return 1;
+}
+float far_sunlight(vec3 point,vec3 normal) {return far_sunlight(point,normal,true);}
+#endif
+#ifdef SHADOW
+vec3 disk_direction(vec3 point,uint sample_id) {
+ vec3 to_eye=point-p.eye.xyz;float depth=max(0.001,dot(to_eye,p.forward.xyz));
+ vec2 uv=vec2(dot(to_eye,p.right.xyz)/(depth*p.eye.w*p.forward.w),-dot(to_eye,p.up.xyz)/(depth*p.forward.w))*0.5+0.5;
+ ivec2 pixel=ivec2(floor(uv*vec2(p.screen.xy)));uint seed=shadow_hash(uint(pixel.x)^shadow_hash(uint(pixel.y))^p.history.z*0x9e3779b9u);
+ float u=(float(shadow_hash(seed+sample_id*2)&0xffffffu)+0.5)/16777216.0;
+ float v=(float(shadow_hash(seed+sample_id*2+1)&0xffffffu)+0.5)/16777216.0;
+ float radius=sqrt(u)*tan(p.soft.x),angle=6.283185307*v;
+ return normalize(p.sun.xyz+radius*(p.light_right.xyz*cos(angle)+p.light_up.xyz*sin(angle)));
+}
+#endif
+#ifdef SHADOW
+layout(set=0,binding=23,std430) buffer ShadowRaw {vec4 shadow_raw[];};
+float shadow(vec3 point,vec3 normal,out uint mask) {
+ mask=15;
+ if(p.effects.w<0.5 || dot(normal,p.sun.xyz)<=0) return 1;
+ float blend=shadow_blend(point);
+ if(blend>=1)return far_sunlight(point,normal);
+ float estimate=p.soft.y>0.5?far_sunlight(point,normal):0;
+ float voxel_estimate=p.soft.y>0.5?far_sunlight(point,normal,false):0;
+ bool edge=p.soft.y>0.5 && ((estimate>0.001 && estimate<0.999)||(voxel_estimate>0.001 && voxel_estimate<0.999));
+ float exact=0;
+ if(edge) {
+  uint count=uint(clamp(p.soft.z,2,4));mask=0;
+  for(uint sample_id=0;sample_id<count;sample_id++) {bool lit=query_mesh(point+normal*0.003,disk_direction(point,sample_id),p.up.w).flags==0;exact+=lit?1:0;if(lit)mask|=1u<<sample_id;}
+  exact/=float(count);mask|=16u;
+ } else {
+  if(p.soft.y<0.5 && cascade_clear(point+normal*0.003)) return 1;
+  vec3 direction=p.soft.y>0.5?disk_direction(point,0u):p.sun.xyz;
+  exact=query_mesh(point+normal*0.003,direction,p.up.w).flags==0?1:0;mask=exact>0?15u:0u;
+ }
+ return blend<=0?exact:mix(exact,far_sunlight(point,normal),blend);
+}
+#endif
+#ifdef SHADOW_CSM
+void main() {
+ uvec3 id=gl_GlobalInvocationID;if(id.x>=p.sky_state.w || id.y>=p.sky_state.w || id.z>=4)return;
+ vec2 xy=((vec2(id.xy)+0.5)/float(p.sky_state.w)*2-1)*radius(id.z)+cascade_offset(id.z);
+ vec3 origin=p.cascade_center.xyz+p.light_right.xyz*xy.x+p.light_up.xyz*xy.y+p.sun.xyz*p.shadow_controls.z;
+ MeshHit hit=query_mesh(origin,-p.sun.xyz,p.shadow_controls.w);
+ far_depth[id.x+p.sky_state.w*id.y+(p.sky_state.w*p.sky_state.w)*(id.z+4)]=hit.flags==0?0:ordered_depth(p.shadow_controls.z-hit.normal_depth.w);
+}
+#else
+void main() {
+ uvec2 id=gl_GlobalInvocationID.xy;if(any(greaterThanEqual(id,p.screen.xy)))return;
+ uint i=id.x+p.screen.x*id.y;
+#ifdef SHADOW
+ if(aux[p.screen.x*p.screen.y+i]==0u) {mesh_shadows[i]=vec2(1);return;}
+#endif
+ vec3 ray=ray_at(id);
+#ifdef SHADOW
+ Hit h=hits[i];vec2 result=vec2(1);
+ if(h.valid!=0){uint mask;result.x=shadow(p.eye.xyz+ray*h.normal_depth.w,h.normal_depth.xyz,mask);shadow_raw[i].x=float(mask);}
+ if(h.water.y>0.5){uint mask;result.y=shadow(p.eye.xyz+ray*h.water_normal_depth.w,h.water_normal_depth.xyz,mask);shadow_raw[i].w=float(mask);}
+ mesh_shadows[i]=result;
+#else
+ float limit=hits[i].normal_depth.w;
+ MeshHit hit=MeshHit(vec4(0,0,0,limit),vec2(0),0,0,uvec4(0));
+ if(limit>=p.scene_min.w)hit=query_mesh(p.eye.xyz,ray,limit);
+ if(hit.flags!=0)aux[i]=p.screen.w>>1;
+ if(hit.flags!=0 || (p.screen.w&1u)!=0)mesh_hits[i]=hit;
+#endif
+}
+
+#endif

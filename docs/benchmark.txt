@@ -1,0 +1,201 @@
+Run: --smoke-test --freeze-animation /tmp/blockworld-rt-final.ppm
+Rendered 286591 visible pixels to /tmp/blockworld-rt-final.ppm
+Traversal parity passed: 60.7% fewer primary steps; 64/257 occupied sections in frustum
+Water passed: opaque layer, surface depth, thickness, underwater exit, transparency toggle
+Sunlight passed: off-screen shadow caster, culling independence, transparent water, shadow toggle
+SSAO passed: corner darkening (min 0.150), finite bounds, disable toggle
+Traversal parity passed: 51.9% fewer primary steps; 2/2 occupied sections in frustum
+World-boundary entry passed
+Render targets resized: 321x239
+Render targets resized: 800x450
+Render targets resized: 1x1
+Render targets resized: 960x540
+Resize passed: odd dimensions, aspect changes, 1x1, restore, zero and oversized extents
+Fish passed: skeletal deformation, instance movement, water clipping; hardware/software and BLAS-mode comparisons passed
+Foliage passed: primary alpha holes, visibility flags, shadow alpha holes on all supported backends
+Vulkan smoke test passed: visibility, deferred shading, deletion, placement, all debug views.
+
+
+Run: --resize-test --frames 360
+Render targets resized: 800x600
+Render targets resized: 1440x810
+Render targets resized: 480x640
+Render targets resized: 1280x720
+Window benchmark: 360 frames in 2.309s, 155.9 FPS average (stationary camera, includes presentation; startup excluded)
+Mesh stats: fish 12, foliage 160, triangles 1024, objects 28, backend ray-query, CPU skin 0.052 ms, upload 0.034 ms, setup 17.351 ms, GPU BLAS 0.042 ms, TLAS 0.018 ms, mesh primary 0.231 ms, mesh shadows 0.221 ms, initial AS build 0.222 ms, AS buffer bytes 249472
+Mean over 300 frames after 60-frame warmup: CPU skin 0.057 ms, upload 0.050 ms; GPU BLAS 0.041 ms, TLAS 0.018 ms, mesh primary 0.187 ms, mesh shadow 0.250 ms; voxel 0.431 ms, SSAO 1.064 ms, shade 0.403 ms, total 2.472 ms
+Last GPU frame: visibility 0.525 ms, SSAO 1.186 ms, shade 0.432 ms, total 2.744 ms
+
+
+Run: --frames 1000
+Window benchmark: 1000 frames in 5.283s, 189.3 FPS average (stationary camera, includes presentation; startup excluded)
+Mesh stats: fish 12, foliage 160, triangles 1024, objects 28, backend ray-query, CPU skin 0.052 ms, upload 0.045 ms, setup 24.870 ms, GPU BLAS 0.041 ms, TLAS 0.018 ms, mesh primary 0.228 ms, mesh shadows 0.768 ms, initial AS build 0.223 ms, AS buffer bytes 249472
+Mean over 940 frames after 60-frame warmup: CPU skin 0.054 ms, upload 0.048 ms; GPU BLAS 0.041 ms, TLAS 0.018 ms, mesh primary 0.229 ms, mesh shadow 0.382 ms; voxel 0.527 ms, SSAO 1.358 ms, shade 0.433 ms, total 3.079 ms
+Last GPU frame: visibility 0.523 ms, SSAO 1.536 ms, shade 0.432 ms, total 3.637 ms
+
+
+Run: --frames 1000 --no-meshes
+Window benchmark: 1000 frames in 4.365s, 229.1 FPS average (stationary camera, includes presentation; startup excluded)
+Mesh stats: fish 12, foliage 160, triangles 1024, objects 28, backend ray-query, CPU skin 0.016 ms, upload 0.020 ms, setup 24.910 ms, GPU BLAS 0.000 ms, TLAS 0.000 ms, mesh primary 0.000 ms, mesh shadows 0.000 ms, initial AS build 0.224 ms, AS buffer bytes 249472
+Mean over 940 frames after 60-frame warmup: CPU skin 0.017 ms, upload 0.019 ms; GPU BLAS 0.000 ms, TLAS 0.000 ms, mesh primary 0.000 ms, mesh shadow 0.000 ms; voxel 0.517 ms, SSAO 1.374 ms, shade 0.498 ms, total 2.552 ms
+Last GPU frame: visibility 0.516 ms, SSAO 1.194 ms, shade 0.415 ms, total 2.218 ms
+
+
+Run: --frames 1000 --no-rt
+Window benchmark: 1000 frames in 6.455s, 154.9 FPS average (stationary camera, includes presentation; startup excluded)
+Mesh stats: fish 12, foliage 160, triangles 1024, objects 28, backend software, CPU skin 0.046 ms, upload 0.015 ms, setup 23.045 ms, GPU BLAS 0.000 ms, TLAS 0.000 ms, mesh primary 1.271 ms, mesh shadows 0.751 ms, initial AS build 0.226 ms, AS buffer bytes 249472
+Mean over 940 frames after 60-frame warmup: CPU skin 0.052 ms, upload 0.017 ms; GPU BLAS 0.000 ms, TLAS 0.000 ms, mesh primary 1.216 ms, mesh shadow 0.918 ms; voxel 0.531 ms, SSAO 1.377 ms, shade 0.435 ms, total 4.568 ms
+Last GPU frame: visibility 0.529 ms, SSAO 1.197 ms, shade 0.434 ms, total 4.272 ms
+
+
+Run: --frames 1000 --rebuild-blas
+Window benchmark: 1000 frames in 5.514s, 181.3 FPS average (stationary camera, includes presentation; startup excluded)
+Mesh stats: fish 12, foliage 160, triangles 1024, objects 28, backend ray-query, CPU skin 0.053 ms, upload 0.044 ms, setup 14.994 ms, GPU BLAS 0.115 ms, TLAS 0.018 ms, mesh primary 0.228 ms, mesh shadows 0.222 ms, initial AS build 0.223 ms, AS buffer bytes 249472
+Mean over 940 frames after 60-frame warmup: CPU skin 0.060 ms, upload 0.052 ms; GPU BLAS 0.116 ms, TLAS 0.018 ms, mesh primary 0.230 ms, mesh shadow 0.320 ms; voxel 0.529 ms, SSAO 1.394 ms, shade 0.435 ms, total 3.134 ms
+Last GPU frame: visibility 0.529 ms, SSAO 1.192 ms, shade 0.432 ms, total 2.828 ms
+
+
+2026-10-20 stable world-coordinate decorations and view-distance slider:
+RTX 2060 SUPER, native 1280x720, --view-chunks 8 --frames 600, validation disabled
+Window benchmark: 600 frames in 3.311s, 181.2 FPS average (stationary camera; startup excluded)
+Scene: fish 30, foliage 1004, triangles 4976, objects 336, backend ray-query
+Mean after 60 warmup frames: CPU skin 0.142 ms, upload 0.082 ms; GPU BLAS 0.051 ms, TLAS 0.021 ms, mesh primary 0.240 ms, mesh shadows 0.232 ms; voxel 0.668 ms, SSAO 1.585 ms, shade 0.505 ms, total 3.393 ms
+AS storage + scratch + input: 2197632 bytes; initial GPU AS build 1.022 ms
+
+2026-10-20 final async streaming / bounded BLAS batches / pooled terrain buffers:
+RTX 2060 SUPER, independent background queue, native 1280x720, validation disabled
+Command: --stream-test --frames 1000 (continuous turning, movement every120frames, view8/2 alternation, CPU cache8MiB)
+No concurrent software Vulkan or other benchmark runs.
+Window benchmark: 1000 frames in 5.514s, 181.4 FPS average
+Streaming: requests9 adopted9 stale0 AS swaps769 max main-thread sync0.251ms
+Cache:384chunks 7.98MiB, pinned7.53MiB budget8MiB
+Frame latency after60 warmup frames: p50 5.279 p95 7.179 p99 9.420 max12.455 ms
+Max CPU renderer stages (including first60): acquire7.643 prepare4.530 submit/present53.607 fencewait9.352 ms
+Means over940 frames: GPU BLAS0.162 TLAS0.025 polygonprimary0.614 polygonshadow0.261 voxel0.434 SSAO1.685 shade0.541 render total3.632 ms
+Final scene:30fish 1015plants 5020triangles 344objects AS active slot2242752bytes
+
+2026-10-20 water HDR/SSR + precomputed filtered waves:
+RTX2060SUPER,1280x720,stationary --water-view,1000frames,validation off,isolated runs
+Default SSR+waves:125.0FPS; water2.513ms; framep50 7.823 p95 9.097 p99 9.564 max11.133ms(after60warmup); GPUrendermean6.190ms
+--no-ssr (waves):171.3FPS; water0.377ms; framep50 5.745 p95 6.577 p99 8.474 max15.226ms; GPUrendermean4.087ms
+--no-ssr --no-waves (flat):172.7FPS; water0.378ms; framep50 5.563 p95 6.741 p99 6.957 max9.978ms; GPUrendermean4.011ms
+Wave sampler:RGBA8_UNORM64x64,7mips,repeat,trilinear,8x anisotropy;3 textureSampleGrad layers;21844byte texel payload
+SSR:32steps/32m,5 refinements,opaque HDR input,sky fallback;fixture2396 accepted reflectionpixels at161x97
+
+
+2026-10-20 -- extended terrain, tree collections, byte-packed voxels, 16x16 atlas
+RTX 2060 SUPER, native 1280x720, all effects, HUD visible, isolated runs.
+--frames 1000 (default 8 chunks)
+145.6 FPS; warm p50/p95/p99/max 6.700/8.085/8.923/13.849 ms
+Mean GPU 5.045 ms; 361 chunks; fish 42; foliage 850; triangles 4744
+--view-chunks 24 --frames 1000
+123.6 FPS; warm p50/p95/p99/max 8.053/9.171/11.182/24.511 ms
+Mean GPU 6.158 ms; 2601 chunks; fish 490; foliage 3533; triangles 29812
+Active AS buffer bytes 10353408; cache payload 55.67 MiB
+Largest submit/present (including warmup) 97.756 ms
+--stream-test --frames 1000 (Khronos + synchronization validation)
+9 requests; 4 adopted; 4 stale; 1 pending at exit; 401 AS swaps
+Max main-thread world sync .190 ms; cache 370 chunks / 7.99 MiB under 8 MiB budget
+Warm p50/p95/p99/max 7.534/10.432/11.965/89.878 ms
+Largest submit/present 83.734 ms. No Vulkan validation errors.
+Full RTX smoke, actual no-ray-query fallback smoke, snowy mountain render passed.
+25 Rust tests, release build, Clippy -D warnings passed.
+
+
+2026-10-20 -- full-range voxel water reflections, refraction/Fresnel/TIR, BGM, fly
+Release build / Clippy -D warnings / 27 Rust unit tests: passed.
+Full RTX smoke and final targeted water capture: Khronos + sync validation passed.
+Water fixture: 3028 reflected-geometry pixels; >32m snow/tree reflections;
+frustum independence; underwater bed reflection; critical angle and equal IOR;
+strong fog; bed/interface distinction; wave replay and resized buffers passed.
+--audio-test
+3.97s PCM supplied; max source feed gap 42.56 ms; >116.1ms events 0; backend errors 0.
+--water-view --stream-test --fly --frames 1500
+1500 frames / 12.324s / 121.7 FPS; post-warmup p50/p95/p99/max
+6.978/16.410/18.520/91.016 ms; max main-thread world sync .176 ms;
+13 requests / 9 adopted / 3 obsolete / 1 pending; 638 AS swaps.
+Audio 13.06s PCM / max gap 43.31 ms / late events 0 / backend errors 0.
+--underwater-view --fly --frames 1000 (final isolated 1280x720 RTX2060SUPER)
+1000 frames / 8.165s / 122.5 FPS; p50/p95/p99/max 8.037/9.162/11.208/16.299 ms.
+Mean optical water pass 3.912 ms, mean render-queue GPU total 6.358 ms.
+Audio 8.92s PCM / max gap 42.59 ms / late events 0 / backend errors 0.
+Source-feed counters are scheduling diagnostics, not physical speaker capture.
+
+
+2026-10-20 -- shading/culling fix, 2560x1440 fullscreen, RTX2060SUPER, 700 frames
+All rendering effects and animations enabled; HUD visible; --no-audio.
+Sequential isolated runs. GPU means and percentiles omit 60 warmup frames.
+Controlled --sky-view baseline: 101.8 FPS / GPU 7.425 ms / p50 9.098 ms
+Final --sky-view: 531.3 FPS / GPU .386 ms / p50/p95/p99 1.470/1.814/2.028 ms
+Controlled --block-view baseline: 86.8 FPS / GPU 9.462 ms / p50 11.220 ms
+Final --block-view: 130.2 FPS / GPU 5.407 ms / p50/p95/p99 7.060/7.748/7.912 ms
+Mesh primary/resolve 2.741 -> .944 ms; opaque+water shading 3.488 -> 1.417 ms;
+dry-pixel water composition .839 -> .222 ms. Grass close-up PPM byte-identical.
+Final --ground-sky-view: 199.6 FPS / GPU 2.550 ms / p50/p95/p99 4.341/4.998/6.547 ms
+Final --ground-view: 144.6 FPS / GPU 4.925 ms / p50/p95/p99 6.533/7.267/7.612 ms
+29 Rust tests / Clippy -D warnings / release build / full RTX sync validation passed.
+See PERFORMANCE.md for details and the distinction between fixture and natural views.
+
+2026-10-20 linear-depth pyramid + conservative directional cascades:
+RTX 2060 SUPER, native 2560x1440, default radius 8, seed 42, HUD visible,
+--frames 700 --no-audio --fixed-time 0.25; sequential runs, 60-frame warmup.
+Reference (--no-depth-pyramid --no-csm): 51.1 FPS, GPU 17.481 ms,
+AO 8.580 ms, mesh shadows .752 ms, opaque/water 3.475 ms, frame p50 19.049 ms.
+Pyramid only (--no-csm): 82.1 FPS, GPU 9.863 ms, AO 1.207 ms,
+mesh shadows .825 ms, opaque/water 3.605 ms, frame p50 11.566 ms.
+Both: 82.4 FPS, GPU 9.850 ms, AO 1.212 ms,
+mesh shadows .783 ms, opaque/water 3.566 ms, frame p50 11.435 ms.
+Last mip build .113 ms; cascade builds [2 voxel, 1 polygon] over 700 frames.
+CSM incremental gain is within normal variation; AO supplies almost all savings.
+Final --stream-test --frames 360 --no-audio: 1280x720, 222.2 FPS,
+GPU mean 2.376 ms; cache builds [4,1], world max main-thread sync .236 ms.
+Frame p50 4.024, p95 5.962, p99 11.464, max 86.008 ms;
+submit/present maximum 83.186 ms. World requests 2/adopted1/stale1:
+not a completed maximum-distance terrain benchmark.
+
+2026-10-20 voxel edge-normal/AO correction + mapped distant shadows:
+RTX 2060 SUPER, native2560x1440, --mountain-view --view-chunks24 --frames500
+--no-audio --fixed-time0.25; sequential; 60-frame warmup.
+--no-far-shadows: 84.9 FPS, GPU8.945 ms; mesh shadow.734, shade1.974;
+frame p50 11.039, p95 12.130, p99 13.323 ms.
+Default48m cutoff: 87.7 FPS, GPU8.711 ms; mesh shadow.724, shade1.749;
+frame p50 10.775, p95 11.826, p99 13.089 ms.
+Approximate mapped distant shadows; conservative maps still reject nearby rays.
+Planar AO: all36 grazing/subpixel/path/resolution cases exactly1, all normalsY+.
+Native RTX and feature-disabled smoke validation + 29unit tests + Clippy pass.
+
+2026-10-20 soft disk shadows / atmosphere, RTX 2060 SUPER
+Native 2560x1440, view 8, fixed ordinary spawn, no audio, 500 frames / 60 warmup:
+Ray Traced: 65.8 FPS, GPU 12.545 ms; Hybrid: 69.7 FPS, GPU 11.694 ms;
+CSM: 72.2 FPS, GPU 11.295 ms. Masked filter approximately 0.5 ms.
+These runs preceded the final shared-sample/classifier refinement.
+Animated day-cycle, final build, native 1280x720, 300 frames / 60 warmup:
+171.4 FPS; GPU mean 3.876 ms; p50/p95/p99 5.500/8.057/10.561 ms;
+six coherent sky-cache builds, final denoise 0.139 ms.
+CSM ringing correction, same fixed-scene 2560x1440 / 500-frame command:
+79.2 FPS; GPU mean 10.678 ms; p50/p95/p99 12.265/13.188/13.468 ms.
+Dense radius-bounded tent filter with local blocker search. One isolated run,
+not an isolated filter microbenchmark; GPU/compiler/system variation applies.
+
+Configurable CSM + jittered TAA, RTX 2060 SUPER, 2560x1440, 500 frames,
+60 warmup, --fixed-time 0.25 --shadow-type hybrid --no-audio, view8/CSM512:
+TAA on: 65.7 FPS, GPU frame mean 12.638 ms, TAA last 1.247 ms;
+p50/p95/p99 14.239/15.264/17.026 ms.
+--no-taa: 70.7 FPS, GPU mean 11.482 ms;
+p50/p95/p99 13.131/14.089/17.846 ms.
+
+2026-10-21 resource-pack atlas path, RTX 2060 SUPER, native 2560x1440,
+--fullscreen --fixed-time 0.25 --resource-pack synthetic-16px.zip --frames 500
+--no-audio; default hybrid/CSM512, nearest filtering, 11 imported PNGs,
+26 total packed frames including fallbacks, cutout leaves, animated water:
+74.4 FPS; GPU mean 11.678 ms; p50/p95/p99 13.303/14.142/15.912 ms.
+Startup excluded; 60 warmup frames. One isolated end-to-end run, not a
+texture-sampler microbenchmark. Synthetic pack is a temporary test fixture.
+
+2026-10-21 LOD validation (not isolated benchmark): RTX 2060 SUPER,
+1280x720, view64, mountain-view, normal shadows, core+sync validation.
+2200 frames completed in 21.468s; all 16352 pages loaded; payload 3.53 MiB,
+levels [0, 588, 2493, 9854, 3417], effective target 8 px.
+CPU test/compiler jobs were concurrent; do not compare as an isolated FPS result.
+600-frame turning/movement/range/resize reproduction completed in 8.553s.
+Long CSM traversal uses ULP-scaled epsilon and resident-volume clipping.
