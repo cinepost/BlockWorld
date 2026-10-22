@@ -286,6 +286,24 @@ fn entity_in_range(point:vec3<f32>)->bool {
 @group(0) @binding(28) var<storage,read_write> gi_history:array<vec4<f32>>;
 fn gi_size()->vec2<u32> {return (p.screen.xy+1u)/2u;}
 fn gi_base(bank:u32,index:u32)->u32 {let size=gi_size();return (bank*size.x*size.y+index)*2u;}
+fn gi_ambient(pixel:vec2<u32>,h:Hit)->vec3<f32> {
+    let size=gi_size();let point=point_at(pixel,h.normal_depth.w);
+    let q=vec2<i32>(floor(vec2<f32>(pixel)*0.5));var sum=vec3<f32>(0.0);var weights=0.0;
+    for(var y=-1;y<=1;y++) {for(var x=-1;x<=1;x++) {
+        let c=clamp(q+vec2<i32>(x,y),vec2<i32>(0),vec2<i32>(size)-1);
+        let base=gi_base(p.history.y,u32(c.x)+size.x*u32(c.y));
+        let surface=gi_history[base];let value=gi_history[base+1u];let key=bitcast<u32>(surface.w);
+        let stamp=bitcast<u32>(value.w);
+        if (stamp>>8u)!=(p.history.z&0x00ffffffu) || (stamp&255u)==0u || (key>>24u)!=h.material || dot(unpack_history_normal(key),h.normal_depth.xyz)<0.98 {continue;}
+        let plane=abs(dot(surface.xyz-point,h.normal_depth.xyz));
+        let weight=exp(-plane*16.0-distance(surface.xyz,point)*0.25);
+        sum+=value.xyz*weight;weights+=weight;
+    }}
+    // Thin/disoccluded geometry without compatible half-res support stays stable.
+    if weights<0.001 {return sky_diffuse(h.normal_depth.xyz);}
+    return sum/weights;
+}
+
 // Far: height + four density planes. Near: height + up to five density planes.
 @group(0) @binding(29) var<storage,read> caustic_data:array<u32>;
 fn caustic_load(i:u32)->u32 {return caustic_data[i];}

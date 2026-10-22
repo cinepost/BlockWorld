@@ -1106,3 +1106,13 @@ Release build, **60 CPU tests**, warnings-as-errors Clippy, extended VXGI tests
 streaming), and full Vulkan smoke pass. Native core/synchronization validation
 reports no errors or warnings. Interactive rendering remains GPU-only; test
 readbacks inspect irradiance and geometry without altering presentation.
+
+
+## 2026-10-22: VXGI performance rollback
+
+The cave-leakage, stored-mask and sky/reprojection experiments described above
+were reverted from the active implementation. Their passing correctness tests
+did not establish acceptable gameplay performance. The experiments and their
+tests are preserved on `vxgi-regressed-2026-10-22`; their historical results are
+not claims about the restored shader. See [PERFORMANCE_REFERENCE.md](PERFORMANCE_REFERENCE.md)
+for matched windowed/fullscreen timings, accepted cave leakage and verification.

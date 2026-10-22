@@ -1,0 +1,17 @@
+Loading screen presented in 544.5 ms (before world preparation)
+Vulkan device: NVIDIA GeForce RTX 2060 SUPER | background queue: independent
+Loading complete; first game frame prepared on GPU
+Render extent: 2560x1440
+Window benchmark: 240 frames in 8.204s, 29.3 FPS average (includes presentation; startup excluded)
+Streaming: requests 1, adopted 1, stale 0, AS swaps 260; max main-thread sync 1.238 ms; cache 361 chunks 11.76 MiB (pinned 11.76, budget 512 MiB)
+Max CPU renderer stages: acquire 0.457, prepare 6.364, submit/present 1.965, fence wait 73.338 ms
+LOD pages [289, 0, 0, 0, 0], uploaded 289, 4.51/256 MiB, effective target 1.0px
+Mesh stats: fish 0, foliage 1444, triangles 5776, objects 403, backend ray-query, CPU skin 0.000 ms, upload 0.000 ms, setup 0.000 ms, GPU BLAS 0.000 ms, TLAS 0.023 ms, mesh primary 0.900 ms, mesh shadows 2.628 ms, initial AS build 2.913 ms, AS buffer bytes 2659136
+Frame latency after warmup: p50 33.584, p95 36.436, p99 40.987, max 42.087 ms
+Mean caustic generation: 0.033 ms
+Mean water composition (optical rays + bump): 0.233 ms
+Mean over 180 frames after 60-frame warmup: CPU skin 0.000 ms, upload 0.000 ms; GPU BLAS 0.000 ms, TLAS 0.024 ms, mesh primary 0.998 ms, mesh shadow 2.800 ms; voxel 3.095 ms, SSAO 0.082 ms, shade 25.381 ms, total 32.690 ms
+Last acceleration: depth mips 0.001 ms, cascade updates 0.000 ms; voxel/mesh builds [37, 37]
+Sky builds 1, last 0.000 ms; denoise 2.267 ms
+Far depth voxel/mesh builds [37, 37]
+Last GPU frame: visibility 6.208 ms, SSAO 0.083 ms, shade 29.641 ms, total 40.132 ms

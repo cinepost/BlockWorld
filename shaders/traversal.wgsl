@@ -166,10 +166,9 @@ fn svo_projected_pixels(cell:vec3<i32>,size:u32)->f32 {
         return max(span.x,span.y)*f32(p.screen.y)/(2.0*p.forward.w);
 }
 fn svo_cell(base:u32,cell:vec3<i32>,minimum:u32)->vec3<u32> {return svo_cone_cell(base,cell,minimum,0.0);}
-fn svo_cone_cell(base:u32,cell:vec3<i32>,minimum:u32,diameter:f32)->vec3<u32> {return svo_cone_sample(base,cell,minimum,diameter).xyz;}
-fn svo_cone_sample(base:u32,cell:vec3<i32>,minimum:u32,diameter:f32)->vec4<u32> {
+fn svo_cone_cell(base:u32,cell:vec3<i32>,minimum:u32,diameter:f32)->vec3<u32> {
     let roots=lod_pages[base];let section=u32(cell.y+64)/16u;
-    if (roots&(1u<<section))==0u {return vec4<u32>(0u,16u,0u,0u);}
+    if (roots&(1u<<section))==0u {return vec3<u32>(0u,16u,0u);}
     var node=countOneBits(roots&((1u<<section)-1u));var size=16u;
     let local=vec3<u32>(bitcast<vec3<u32>>(cell))&vec3<u32>(15u);
     for(var depth=0u;depth<5u;depth++) {
@@ -179,15 +178,15 @@ fn svo_cone_sample(base:u32,cell:vec3<i32>,minimum:u32,diameter:f32)->vec4<u32> 
         if diameter==0.0 {pixels=svo_projected_pixels(cell,size);}
         if mask==0u {
             let coarse=minimum>1u || pixels/f32(size)<=max(0.0001,p.lod.x);
-            return vec4<u32>(material,size,select(0u,1u,coarse),(bits>>16u)&255u);
+            return vec3<u32>(material,size,select(0u,1u,coarse));
         }
-        if (diameter>0.0 && f32(size)<=diameter) || (diameter==0.0 && pixels<=max(0.0001,p.lod.x)) {return vec4<u32>(material,size,1u,(bits>>16u)&255u);}
+        if (diameter>0.0 && f32(size)<=diameter) || (diameter==0.0 && pixels<=max(0.0001,p.lod.x)) {return vec3<u32>(material,size,1u);}
         size/=2u;
         let octant=select(0u,1u,(local.x&size)!=0u)|select(0u,2u,(local.y&size)!=0u)|select(0u,4u,(local.z&size)!=0u);
-        if (mask&(1u<<octant))==0u {return vec4<u32>(0u,size,0u,0u);}
+        if (mask&(1u<<octant))==0u {return vec3<u32>(0u,size,0u);}
         node=lod_pages[address]+countOneBits(mask&((1u<<octant)-1u));
     }
-    return vec4<u32>(0u,1u,0u,0u);
+    return vec3<u32>(0u,1u,0u);
 }
 fn trace_lod(origin:vec3<f32>,ray:vec3<f32>,limit:f32,water_path:bool)->Hit {
     var hit=miss();if lod_pages[0]==0u {return hit;}var t=0.0;var normal=-ray;

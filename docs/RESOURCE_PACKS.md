@@ -118,8 +118,3 @@ GPU frame advancement/interpolation, linear gutter sampling, voxel alpha holes,
 polygon-backend alpha agreement and fallback restoration. Unit tests additionally
 verify all padded RGBA edges/corners, explicit animation timing/order, ZIP filters,
 partial mappings, unsupported sizes and conventional flow strips.
-
-The aggregate appearance word now also carries animated per-face mean alpha in
-its high byte (RGB remains in the low 24 bits). VXGI uses this for cutout-voxel
-light transmission. CPU metadata tests cover opaque fallback, half/quarter
-coverage leaf frames, and interpolation; the record remains 12 words.

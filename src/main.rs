@@ -96,7 +96,6 @@ impl Game {
         progress(55)?;
         let args: Vec<_> = std::env::args().collect();
         renderer.settings.vxgi=args.iter().any(|a| a=="--vxgi");
-        renderer.settings.gi_face_masks = args.iter().any(|a|a=="--gi-face-masks") && !args.iter().any(|a|a=="--no-gi-face-masks");
         renderer.settings.gi_temporal = !args.iter().any(|a| a=="--no-gi-temporal");
         renderer.settings.lod_merging = !args.iter().any(|a| a=="--no-lod-merging");
         if let Some(i)=args.iter().position(|a| a=="--texture-filter") {
@@ -519,6 +518,7 @@ struct App {
     cpu_sums: [f64; 2],
     water_sum: f64,
     caustic_sum: f64,
+    gi_sum: f64,
 }
 impl App {
     fn capture(&mut self, capture: bool) {
@@ -724,7 +724,6 @@ impl App {
             if settings.vxgi {
                 ui.slider("GI distance (m)",8.0,256.0,&mut settings.gi_range);
                 ui.slider("GI cone angle (deg)",5.0,60.0,&mut settings.gi_angle);
-                ui.checkbox("GI stored face masks",&mut settings.gi_face_masks);
                 ui.checkbox("GI temporal reprojection",&mut settings.gi_temporal);
             }
             ui.checkbox("Ground bounce",&mut settings.ground_bounce);
@@ -792,6 +791,7 @@ impl App {
                 self.measured_frames += 1;
                 self.water_sum += game.renderer.water_ms as f64;
                 self.caustic_sum += game.renderer.caustic_ms as f64;
+                self.gi_sum += game.renderer.gi_ms as f64;
                 for (sum, value) in self.gpu_sums.iter_mut().zip(gpu) {
                     *sum += value as f64;
                 }
@@ -958,6 +958,7 @@ impl ApplicationHandler for App {
                         let m = self.mesh_sums.map(|v| v / n);
                         let c = self.cpu_sums.map(|v| v / n);
                         let g = self.gpu_sums.map(|v| v / n);
+                        println!("Mean voxel GI: {:.3} ms", self.gi_sum / n);
                         println!("Mean caustic generation: {:.3} ms", self.caustic_sum / n);
                         println!(
                             "Mean water composition (optical rays + bump): {:.3} ms",
@@ -1104,8 +1105,6 @@ fn headless(mut game: Game, smoke: bool, path: &str) -> Result<()> {
 }
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.iter().any(|a|a=="--gi-mask-test") {return smoke::gi_masks(&mut Game::new(None)?.renderer);}
-    if args.iter().any(|a|a=="--gi-sky-test") {return smoke::gi_sky(&mut Game::new(None)?.renderer);}
     if args.iter().any(|a|a=="--vxgi-test") {return smoke::vxgi(&mut Game::new(None)?.renderer);}
     if args.iter().any(|a|a=="--svo-test") {return smoke::svo(&mut Game::new(None)?.renderer);}
     if args.iter().any(|a|a=="--entity-test") {return smoke::entity_visibility(&mut Game::new(None)?.renderer);}
@@ -1116,7 +1115,7 @@ fn main() -> Result<()> {
     if args.iter().any(|a|a=="--lod-stream-test") {return smoke::lod_streaming(&mut Game::new(None)?.renderer);}
     if args.iter().any(|a|a=="--lod-test") {return smoke::lod(&mut Game::new(None)?.renderer);}
     if args.iter().any(|s| s == "--help" || s == "-h") {
-        println!("BlockWorld\n  cargo run --release\n  --headless [output.ppm]  Render one frame without a window\n  --smoke-test [output.ppm]  Exercise Vulkan and block editing\n  --stream-test  Automated turning, movement, range and cache-budget stress test\n  --cache-mb N  CPU chunk cache budget (active chunks stay pinned)\n  --view-chunks N  Set view distance 1..128 chunks (also in ImGui)\n  --noisy-world --fly  Deterministic incompressible terrain stress fixture\n  --vxgi --no-gi-temporal  Experimental voxel GI; optional temporal bypass\n  --gi-face-masks / --no-gi-face-masks  Experimental stored-mask shortcut (off by default)\n  --gi-mask-test  Separate GPU mask A/B and memory metrics\n  --gi-sky-test  Validate skylight and moving-camera GI\n  --vxgi-test  Validate experimental GI on Vulkan\n  --lod-pixels N  Projected voxel target, 1..64 pixels (default 1; budget adaptive)\n  --frames N  Exit window after N frames\n  --resize-test  Exercise window/buffer resizing (use --frames 360)\n  --fullscreen  Use the monitor native extent\n  --sky-view --ground-sky-view  Empty-sky profiling cameras\n  --block-view --ground-view  Single-block / natural-ground close-up cameras\n  --no-hierarchy --no-culling --no-ssao --no-shadows --opaque-water\n  --no-depth-pyramid --no-csm  Reference lighting paths\n  --fixed-time SECONDS  Deterministic fish and wave pose for comparisons\n  --shadow-ray-distance METRES  Exact contact-shadow radius (default 48)\n  --no-far-shadows  Exact rays at all distances\n  --shadow-type ray|hybrid|csm --hard-shadows\n  --csm-resolution 128|256|512|1024|2048\n  --resource-pack PATH.zip --texture-filter nearest|linear\n  --resource-pack-test  Verify ZIP/PNG animation, padding and GPU sampling\n  --no-atmosphere --day-cycle --sun-elevation DEGREES\n  --audio-test  Verify BGM playback\n  --no-audio  Disable BGM\n  --fly  Start in fly-camera mode (F2 toggles; Space/C rise/fall)\n  --water-test  Verify water optics and bump on Vulkan\n  --biome NAME  Start at a biome (e.g. desert, deep-ocean, jagged-peaks)\n  --mountain-view  Start overlooking a snowy mountain\n  --underwater-view  Start submerged, looking at the water surface\n  --water-view  Start above a lake for water profiling\n  --no-ssr --no-waves --no-stochastic-waves\n  --no-caustics  Disable underwater direct-light focusing\n  --no-caustic-near --no-caustic-adaptive --no-caustic-shallow\n  --caustics-test  Validate photon maps and lighting gates\n  --no-multiscale-waves --no-wave-warp  Wave comparisons\n  --no-meshes --no-rt --freeze-animation --rebuild-blas\n    Disable effects individually for comparisons\n\nWASD walk, mouse look, Space jump/swim up, Ctrl / Shift run; ImGui auto-jump\nLeft click delete, right click place; 1–7 material; F1 debug views; F11 HUD; F2 fly (Space/C rise/fall)\nClick captures mouse, Esc releases. Edits are kept in memory only.");
+        println!("BlockWorld\n  cargo run --release\n  --headless [output.ppm]  Render one frame without a window\n  --smoke-test [output.ppm]  Exercise Vulkan and block editing\n  --stream-test  Automated turning, movement, range and cache-budget stress test\n  --cache-mb N  CPU chunk cache budget (active chunks stay pinned)\n  --view-chunks N  Set view distance 1..128 chunks (also in ImGui)\n  --noisy-world --fly  Deterministic incompressible terrain stress fixture\n  --vxgi --no-gi-temporal  Experimental voxel GI; optional temporal bypass\n  --vxgi-test  Validate experimental GI on Vulkan\n  --lod-pixels N  Projected voxel target, 1..64 pixels (default 1; budget adaptive)\n  --frames N  Exit window after N frames\n  --resize-test  Exercise window/buffer resizing (use --frames 360)\n  --fullscreen  Use the monitor native extent\n  --sky-view --ground-sky-view  Empty-sky profiling cameras\n  --block-view --ground-view  Single-block / natural-ground close-up cameras\n  --no-hierarchy --no-culling --no-ssao --no-shadows --opaque-water\n  --no-depth-pyramid --no-csm  Reference lighting paths\n  --fixed-time SECONDS  Deterministic fish and wave pose for comparisons\n  --shadow-ray-distance METRES  Exact contact-shadow radius (default 48)\n  --no-far-shadows  Exact rays at all distances\n  --shadow-type ray|hybrid|csm --hard-shadows\n  --csm-resolution 128|256|512|1024|2048\n  --resource-pack PATH.zip --texture-filter nearest|linear\n  --resource-pack-test  Verify ZIP/PNG animation, padding and GPU sampling\n  --no-atmosphere --day-cycle --sun-elevation DEGREES\n  --audio-test  Verify BGM playback\n  --no-audio  Disable BGM\n  --fly  Start in fly-camera mode (F2 toggles; Space/C rise/fall)\n  --water-test  Verify water optics and bump on Vulkan\n  --biome NAME  Start at a biome (e.g. desert, deep-ocean, jagged-peaks)\n  --mountain-view  Start overlooking a snowy mountain\n  --underwater-view  Start submerged, looking at the water surface\n  --water-view  Start above a lake for water profiling\n  --no-ssr --no-waves --no-stochastic-waves\n  --no-caustics  Disable underwater direct-light focusing\n  --no-caustic-near --no-caustic-adaptive --no-caustic-shallow\n  --caustics-test  Validate photon maps and lighting gates\n  --no-multiscale-waves --no-wave-warp  Wave comparisons\n  --no-meshes --no-rt --freeze-animation --rebuild-blas\n    Disable effects individually for comparisons\n\nWASD walk, mouse look, Space jump/swim up, Ctrl / Shift run; ImGui auto-jump\nLeft click delete, right click place; 1–7 material; F1 debug views; F11 HUD; F2 fly (Space/C rise/fall)\nClick captures mouse, Esc releases. Edits are kept in memory only.");
         return Ok(());
     }
     if args.iter().any(|a| a == "--audio-test") {
@@ -1191,6 +1190,7 @@ fn main() -> Result<()> {
         cpu_sums: [0.0; 2],
         water_sum: 0.0,
         caustic_sum: 0.0,
+        gi_sum: 0.0,
     };
     event_loop.run_app(&mut app)?;
     if let Some(e) = app.error.take() {

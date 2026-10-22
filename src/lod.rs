@@ -24,7 +24,7 @@ pub const TABLE_WORDS: usize = MERGE_BASE + PAGE_SIDE * PAGE_SIDE * SUBCHUNKS;
 pub const POOL_BYTES: usize = 256 * 1024 * 1024;
 const UPLOAD_BYTES: usize = 1024 * 1024;
 const CACHE_BYTES: usize = 64 * 1024 * 1024;
-pub const GENERATOR_VERSION: u32 = 4;
+pub const GENERATOR_VERSION: u32 = 3;
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct CacheKey {
     pub version: u32,
@@ -40,13 +40,11 @@ struct Level {
     data: Vec<u8>,
 }
 // Each node is two words: relative first-child index, then child mask (8 bits)
-// and aggregate material palette index (8 bits), then exposure mask (8 bits).
-// Node size remains 8 bytes; positions follow the octant path.
+// and aggregate material palette index (8 bits). Positions follow the octant path.
 #[derive(Default,Clone)]
 struct SvoNode {children:Vec<(usize,SvoNode)>,material:u8}
 impl Level {
-    fn encode_svo(self)->Self {self.encode_svo_masks(None,true)}
-    fn encode_svo_masks(mut self,source:Option<&[u8]>,masks:bool)->Self {
+    fn encode_svo(mut self)->Self {
         fn build(level:&Level,low:[usize;3],size:usize)->SvoNode {
             if low[1]+size<=level.low*level.scale || low[1]>=level.high*level.scale {return SvoNode::default();}
             if size>level.scale && low[1]>=level.low*level.scale && low[1]+size<=level.high*level.scale {
@@ -78,51 +76,24 @@ impl Level {
             if material==1 || material==3 {for surface in [2,4,12,18,19] {if counts[surface]>0 {material=surface;break;}}}
             SvoNode{material:material as u8,children:all.into_iter().enumerate().filter(|(_,n)| n.material!=0).collect()}
         }
-        fn write(node:SvoNode,index:usize,nodes:&mut Vec<[u32;2]>,context:(&Level,Option<&[u8]>,bool),low:[usize;3],size:usize) {
-            let (level,source,masks)=context;
+        fn write(node:SvoNode,index:usize,nodes:&mut Vec<[u32;2]>) {
             let mask=node.children.iter().fold(0u32,|v,(i,_)|v|(1<<i));
-            let base=nodes.len();nodes[index]=[if mask==0 {0} else {base as u32},mask|((node.material as u32)<<8)|((if masks {level.face_mask(source,low,size)} else {0}) as u32)<<16];
+            let base=nodes.len();nodes[index]=[if mask==0 {0} else {base as u32},mask|((node.material as u32)<<8)];
             nodes.resize(base+node.children.len(),[0;2]);
-            for (i,(octant,child)) in node.children.into_iter().enumerate() {
-                let half=size/2;let offset=[octant&1,(octant>>1)&1,(octant>>2)&1];
-                write(child,base+i,nodes,context,std::array::from_fn(|a|low[a]+offset[a]*half),half);
-            }
+            for (i,(_,child)) in node.children.into_iter().enumerate() {write(child,base+i,nodes);}
         }
         let mut roots=Vec::new();let mut mask=0u32;
         for y in 0..SUBCHUNKS {
             if (y+1)*EDGE<=self.low*self.scale || y*EDGE>=self.high*self.scale {continue;}
             let node=build(&self,[0,y*EDGE,0],EDGE);
-            if node.material!=0 {mask|=1<<y;roots.push((y,node));}
+            if node.material!=0 {mask|=1<<y;roots.push(node);}
         }
         let mut nodes=vec![[0u32;2];roots.len()];
-        for (index,(y,node)) in roots.into_iter().enumerate() {write(node,index,&mut nodes,(&self,source,masks),[0,y*EDGE,0],EDGE);}
+        for (index,node) in roots.into_iter().enumerate() {write(node,index,&mut nodes);}
         self.data=mask.to_le_bytes().to_vec();self.data.extend_from_slice(bytemuck::cast_slice(&nodes));
         self.low=self.low*self.scale/EDGE*EDGE/self.scale;
         self.high=(self.high*self.scale).div_ceil(EDGE)*EDGE/self.scale;
         self
-    }
-    // bits 0/1: all faces closed / all faces open; bits 2..7: closed
-    // -X,+X,-Y,+Y,-Z,+Z faces. Partial coverage and unknown neighbors prove neither.
-    fn face_mask(&self,source:Option<&[u8]>,low:[usize;3],size:usize)->u8 {
-        if source.is_none() && self.scale!=1 {return 0;}
-        let mut closed=0u8;let mut opened=0u8;
-        for face in 0..6 {
-            let axis=face/2;let a=(axis+1)%3;let b=(axis+2)%3;
-            let mut solid=true;let mut air=true;
-            for u in 0..size {for v in 0..size {
-                let mut q=low.map(|x|x as i32);q[a]+=u as i32;q[b]+=v as i32;
-                q[axis]+=if face%2==0 {-1} else {size as i32};
-                if q[0]<0 || q[0]>=EDGE as i32 || q[2]<0 || q[2]>=EDGE as i32 || q[1]<0 || q[1]>=HEIGHT as i32 {solid=false;air=false;continue;}
-                let [x,y,z]=q.map(|x|x as usize);
-                let material=if let Some(data)=source {data[x+EDGE*(z+EDGE*y)]}
-                    else if y<self.low || y>=self.high {0} else {self.data[x+EDGE*(z+EDGE*(y-self.low))]};
-                solid &= material!=0 && material!=5 && material!=13 && material!=14;
-                air &= material==0 || material==5;
-            }}
-            if solid {closed|=1<<face;}
-            if air {opened|=1<<face;}
-        }
-        (closed<<2)|u8::from(closed==63)|(u8::from(opened==63)<<1)
     }
     #[cfg(test)]
     fn sample_svo(&self,x:usize,y:usize,z:usize)->u8 {
@@ -176,7 +147,6 @@ impl Pyramid {
                 }
             }
         }
-        let source=data.clone();
         let mut levels = Vec::new();
         let mut scale = 1;
         loop {
@@ -194,7 +164,7 @@ impl Pyramid {
                 low,
                 high,
                 data: data[low * slab..high * slab].to_vec(),
-            }.encode_svo_masks(Some(&source),true));
+            }.encode_svo());
             if scale == EDGE {
                 break;
             }
@@ -1139,57 +1109,4 @@ mod biome_palette_tests {
         let pyramid=Pyramid::build(&chunk);
         for l in pyramid.levels {assert_eq!(l.sample_svo(0,128,0),Block::Podzol as u8);assert_eq!(l.data.len(),4+SUBCHUNKS*8);}
     }
-    #[test]
-    fn svo_face_mask_flags_are_conservative() {
-        let mask_at=|level:&Level,cell:[usize;3]| {
-            let word=|i:usize|u32::from_le_bytes(level.data[i*4..i*4+4].try_into().unwrap());
-            let root=word(0);let section=cell[1]/16;let mut node=(root&((1<<section)-1)).count_ones() as usize;let mut size=16;
-            loop {
-                let bits=word(2+node*2);let children=bits&255;
-                if children==0 {break ((bits>>16)&255) as u8;}
-                size/=2;let octant=usize::from(cell[0]&size!=0)|(usize::from(cell[1]&size!=0)<<1)|(usize::from(cell[2]&size!=0)<<2);
-                assert_ne!(children&(1<<octant),0);node=word(1+node*2) as usize+(children&((1<<octant)-1)).count_ones() as usize;
-            }
-        };
-        let index=|x:usize,y:usize,z:usize|x+16*(z+16*(y-160));
-        let mut data=vec![0u8;4096];data[index(8,164,8)]=6;
-        let level=|data:Vec<u8>|Level{scale:1,low:160,high:176,data};
-        assert_eq!(mask_at(&level(data.clone()).encode_svo(),[8,164,8]),2);
-        for [x,y,z] in [[7,164,8],[9,164,8],[8,163,8],[8,165,8],[8,164,7],[8,164,9]] {data[index(x,y,z)]=1;}
-        assert_eq!(mask_at(&level(data.clone()).encode_svo(),[8,164,8]),253);
-        data[index(9,164,8)]=13;
-        let mask=mask_at(&level(data.clone()).encode_svo(),[8,164,8]);
-        assert_eq!(mask&3,0);assert_eq!(mask&(1<<3),0);
-        data.fill(0);data[index(0,164,8)]=6;
-        assert_eq!(mask_at(&level(data.clone()).encode_svo(),[0,164,8])&3,0,"Unknown cross-chunk face cannot prove exposure");
-        data.fill(0);
-        for y in 164..166 {for z in 4..6 {for x in 4..6 {data[index(x,y,z)]=6;}}}
-        for (y,z) in [(164,4),(164,5),(165,4)] {data[index(6,y,z)]=1;}
-        assert_eq!(level(data.clone()).face_mask(None,[4,164,4],2)&(1<<3),0,"Partial face became fully closed");
-        data[index(6,165,5)]=1;
-        assert_ne!(level(data).face_mask(None,[4,164,4],2)&(1<<3),0);
-    }
-    #[test]
-    fn svo_face_mask_metrics() {
-        // Independent CPU preparation A/B. Same topology/materials, only mask work differs.
-        let data=(0..4096).map(|i|if (i*747796405u64+2891336453).count_ones().is_multiple_of(3) {6} else {1}).collect::<Vec<u8>>();
-        let level=Level{scale:1,low:160,high:176,data};
-        let mut outputs=Vec::new();let mut timings=Vec::new();
-        for enabled in [false,true] {
-            let mut elapsed=Vec::new();
-            for _ in 0..9 {
-                let start=std::time::Instant::now();let encoded=level.clone().encode_svo_masks(None,enabled);
-                elapsed.push(start.elapsed().as_secs_f64()*1000.0);outputs.push(encoded);
-            }
-            elapsed.sort_by(f64::total_cmp);timings.push(elapsed[4]);
-        }
-        let plain=&outputs[0].data;let masked=&outputs[9].data;
-        assert_eq!(plain.len(),masked.len());
-        for (i,(a,b)) in plain.as_chunks::<4>().0.iter().zip(masked.as_chunks::<4>().0).enumerate() {
-            let a=u32::from_le_bytes(*a);let b=u32::from_le_bytes(*b);let keep=if i>=2 && i%2==0 {0xffff} else {u32::MAX};assert_eq!(a&keep,b&keep);
-        }
-        let nodes=(masked.len()-4)/8;
-        println!("SVO face-mask CPU A/B: {nodes} nodes, {} bytes each mode, +0 resident bytes (spare byte/node, {:.1}% node bandwidth change); median encode off {:.3} ms, on {:.3} ms; separate byte array would add {nodes} bytes",masked.len(),0.0,timings[0],timings[1]);
-    }
-
 }

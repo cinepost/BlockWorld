@@ -33,7 +33,7 @@ pub struct Frame {
 pub struct Sprite {
     pub pixels: Vec<Vec<u8>>,
     pub rects: Vec<Rect>,
-    pub averages: Vec<[f32;4]>,
+    pub averages: Vec<[f32;3]>,
     pub timeline: Vec<Frame>,
     pub interpolate: bool,
 }
@@ -270,8 +270,7 @@ impl Pack {
                     let alpha=texel[3] as f32/255.0;weight+=alpha;
                     for (i,value) in sum.iter_mut().enumerate() {*value+=texel[i] as f32/255.0*alpha;}
                 }
-                let rgb=sum.map(|v|v/weight.max(1.0));
-                sprite.averages.push([rgb[0],rgb[1],rgb[2],weight/256.0]);
+                sprite.averages.push(sum.map(|v|v/weight.max(1.0)));
                 let rect = slots.next().unwrap();
                 for y in -1i32..=16 {
                     for x in -1i32..=16 {
@@ -302,8 +301,7 @@ impl Pack {
             let (a, b, blend) = sprite.sample(seconds);
             let average: [f32;3]=std::array::from_fn(|i| (sprite.averages[a][i]*(1.0-blend)+sprite.averages[b][i]*blend)*face.tint[i]);
             let rgb=average.map(|v| (v.clamp(0.0,1.0)*255.0).round() as u32);
-            let coverage=((sprite.averages[a][3]*(1.0-blend)+sprite.averages[b][3]*blend)*255.0).round().clamp(0.0,255.0) as u32;
-            let packed=(coverage<<24)|(rgb[0]<<16)|(rgb[1]<<8)|rgb[2];
+            let packed=(rgb[0]<<16)|(rgb[1]<<8)|rgb[2];
             let a = sprite.rects[a];
             let b = sprite.rects[b];
             data.extend([
@@ -652,18 +650,4 @@ mod tests {
         assert_eq!(sprite.sample(0.05).0, 1);
         assert!(decode("stone", &png(32, 32, [0, 0, 0, 255]), None).is_err());
     }
-    #[test]
-    fn aggregate_coverage_tracks_animated_leaf_alpha() {
-        let pixels=image::RgbaImage::from_fn(16,32,|x,y|image::Rgba([40,180,60,if x<if y<16 {8} else {4} {255} else {0}]));
-        let mut bytes=std::io::Cursor::new(Vec::new());
-        image::DynamicImage::ImageRgba8(pixels).write_to(&mut bytes,image::ImageFormat::Png).unwrap();
-        let path=zip(&[("assets/minecraft/textures/block/oak_leaves.png",bytes.into_inner()),("assets/minecraft/textures/block/oak_leaves.png.mcmeta",br#"{"animation":{"frametime":1,"interpolate":true}}"#.to_vec())]);
-        let pack=Pack::open(&path,&crate::renderer::textures()).unwrap();std::fs::remove_file(path).unwrap();
-        let record=(13-1)*72+11;
-        assert_eq!(pack.metadata(0.0,false)[record]>>24,128);
-        assert_eq!(pack.metadata(0.025,false)[record]>>24,96);
-        assert_eq!(pack.metadata(0.05,false)[record]>>24,64);
-        assert_eq!(pack.metadata(0.0,false)[11]>>24,255);
-    }
-
 }

@@ -244,8 +244,6 @@ pub struct RenderSettings {
     pub gi_range:f32,
     pub gi_angle:f32,
     pub gi_temporal:bool,
-    pub gi_face_masks:bool,
-    pub gi_fixed_seed:bool,
     pub depth_pyramid: bool,
     pub csm: bool,
     pub far_shadows: bool,
@@ -307,8 +305,6 @@ impl Default for RenderSettings {
             gi_range:96.0,
             gi_angle:30.0,
             gi_temporal:true,
-            gi_face_masks:false,
-            gi_fixed_seed:false,
             depth_pyramid: true,
             csm: true,
             far_shadows: true,
@@ -1650,7 +1646,7 @@ impl Renderer {
             self.settings.csm as u32];
         history_key.extend([self.settings.sun_elevation.to_bits(), self.settings.sun_azimuth.to_bits(), debug]);
         history_key.extend([
-            self.settings.vxgi as u32,self.settings.sun_intensity.to_bits(),self.settings.gi_range.to_bits(),self.settings.gi_angle.to_bits(),self.settings.gi_temporal as u32,self.settings.gi_face_masks as u32,self.settings.gi_fixed_seed as u32,
+            self.settings.vxgi as u32,self.settings.sun_intensity.to_bits(),self.settings.gi_range.to_bits(),self.settings.gi_angle.to_bits(),self.settings.gi_temporal as u32,
             self.settings.shadow_ray_distance.to_bits(),
             self.settings.disk_radius.to_bits(),
             self.settings.shadows as u32,
@@ -1708,7 +1704,7 @@ impl Renderer {
             wave_detail:[self.settings.multiscale_waves as u32 as f32,self.settings.wave_warp.clamp(0.0,4.0),self.settings.wave_distance.clamp(16.0,512.0),0.0],
             caustics:[self.settings.caustics as u32 as f32,self.settings.caustic_strength.clamp(0.0,2.0),self.settings.caustic_distance.clamp(8.0,96.0),24.0],
             caustic_map:[(player.eye().x/6.0).floor()*6.0-48.0,(player.eye().z/6.0).floor()*6.0-48.0,96.0/256.0,(self.settings.caustic_near as u32 | ((self.settings.caustic_adaptive as u32)<<1) | ((self.settings.caustic_shallow as u32)<<2)) as f32],
-            gi:[if self.settings.vxgi {1.0+2.0*(self.settings.gi_face_masks as u32 as f32)+4.0*(self.settings.gi_fixed_seed as u32 as f32)} else {0.0},self.settings.gi_range,(self.settings.gi_angle.to_radians()*0.5).tan(),self.settings.gi_temporal as u32 as f32],
+            gi:[self.settings.vxgi as u32 as f32,self.settings.gi_range,(self.settings.gi_angle.to_radians()*0.5).tan(),self.settings.gi_temporal as u32 as f32],
             display: [self.settings.exposure_ev.clamp(-8.0,8.0), (self.settings.tone_mapping && !self.reference_validation) as u32 as f32, self.settings.saturation.clamp(0.0,2.0), self.settings.ground_bounce as u32 as f32],
             shadow_controls: [
                 self.settings.shadow_ray_distance,

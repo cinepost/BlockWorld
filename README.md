@@ -356,3 +356,9 @@ Experimental one-bounce voxel GI is available with `--vxgi` or the F11 toggle. I
 Underwater direct-light caustics share the animated water wave field and require
 optical water rays. F11 exposes strength, fade distance and GPU timing.
 See [caustic implementation and validation](docs/CAUSTICS.md).
+
+## VXGI reference checkpoint
+
+The restored VXGI implementation is tagged `vxgi-reference-2026-10-22`. See
+[performance measurements and known limitations](docs/PERFORMANCE_REFERENCE.md).
+The regressed experiments are preserved on `vxgi-regressed-2026-10-22`.

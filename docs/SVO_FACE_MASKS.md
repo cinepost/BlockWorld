@@ -1,3 +1,6 @@
+> Historical experiment: reverted from the performance reference. The commands
+> and mask implementation below belong to the archived regressed branch.
+
 # SVO face-mask experiment
 
 An independent experiment from the VXGI cave leakage fixes. Every SVO node

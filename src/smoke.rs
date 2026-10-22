@@ -2206,7 +2206,6 @@ pub fn svo(r:&mut Renderer)->Result<()> {
 /// Independent GI experiment: primary geometry is identical, history is bounded,
 /// setting changes/edits reject stale lighting, and the original path is restored.
 pub fn vxgi(r:&mut Renderer)->Result<()> {
-    gi_sky(r)?;
     let saved=r.settings;let extent=(r.width,r.height);
     r.resize_targets(65,49)?;r.settings=RenderSettings::default();
     r.settings.meshes=false;r.settings.shadows=false;r.settings.atmosphere=false;
@@ -2244,47 +2243,6 @@ pub fn vxgi(r:&mut Renderer)->Result<()> {
     ensure!(count(r)<=2,"GI disocclusion reused unrelated history");
     camera.feet.x-=5.0;r.settings.vxgi=false;
     ensure!(r.render(&camera,origin,0)?==reference.as_slice(),"Original ambient path changed after GI toggle");
-    // Sealed cave with one-voxel walls across section/chunk boundaries. An
-    // extremely short cone budget must not turn termination into skylight.
-    blocks.fill(0);
-    for y in 95..=112 {for z in -16..=16 {for x in -16..=16 {
-        if y==95 || y==112 || x== -16 || x==16 || z== -16 || z==16 {put(&mut blocks,origin,IVec3::new(x,y,z),1);}
-    }}}
-    r.upload(&blocks)?;r.settings.vxgi=true;r.settings.gi_temporal=false;r.settings.sun_intensity=0.0;
-    camera.feet=Vec3::new(0.5,100.0,0.5);
-    let gi_max=|r:&Renderer| {
-        let pixels=r.width.div_ceil(2) as usize*r.height.div_ceil(2) as usize;
-        let bank=(r.shadow_frame()&1) as usize;
-        r.gi_history_data()[bank*pixels*2..(bank+1)*pixels*2].as_chunks::<2>().0.iter().flat_map(|v|v[1][..3].iter()).copied().fold(0.0f32,f32::max)
-    };
-    for range in [1.0,24.0,96.0] {for (yaw,pitch) in [(0.0,0.3),(0.7,0.9),(1.57,-0.8)] {
-        camera.yaw=yaw;camera.pitch=pitch;r.settings.gi_range=range;
-        r.render(&camera,origin,0)?;
-        let maximum=gi_max(r);
-        if maximum>=0.00001 {
-            let size=r.width.div_ceil(2) as usize*r.height.div_ceil(2) as usize;let bank=(r.shadow_frame()&1) as usize;
-            let pair=r.gi_history_data()[bank*size*2..(bank+1)*size*2].as_chunks::<2>().0.iter().max_by(|a,b|a[1][0].total_cmp(&b[1][0])).unwrap();
-            println!("Leaking receiver {:?}, irradiance {:?}",pair[0],pair[1]);
-        }
-        ensure!(maximum<0.00001,"Sealed cave leaked GI: range {range}, pose {yaw}/{pitch}, irradiance {maximum}");
-    }}
-    // Sunlight at a bounce source also needs visibility, independently of CSM.
-    r.settings.shadows=true;r.settings.sun_intensity=RenderSettings::default().sun_intensity;
-    for csm in [false,true] {
-        r.settings.csm=csm;r.render(&camera,origin,0)?;
-        ensure!(gi_max(r)<0.00001,"Sealed cave admitted direct sun into a GI source (CSM={csm})");
-    }
-    // A stale coarse page contradicting the current near cave cannot replace it.
-    r.lod.as_mut().unwrap().fixture_svo((0,0),IVec3::new(0,96,0),16,12);
-    r.render(&camera,origin,0)?;
-    ensure!(gi_max(r)<0.00001,"Stale near SVO page replaced exact cave geometry");
-    r.settings.sun_intensity=0.0;r.settings.shadows=false;
-    // Daylight must still enter a real opening, rather than merely blacking out GI.
-    for z in -16..=16 {for x in -16..=16 {put(&mut blocks,origin,IVec3::new(x,112,z),0);}}
-    r.upload(&blocks)?;camera.pitch= -0.7;camera.yaw=0.0;r.settings.gi_range=96.0;
-    r.render(&camera,origin,0)?;
-    ensure!(gi_max(r)>0.001,"Open cave failed to admit skylight");
-    r.settings.sun_intensity=RenderSettings::default().sun_intensity;r.settings.gi_temporal=true;
     // GI pages include the normally excluded exact near ring, asynchronously.
     r.settings.vxgi=true;r.settings.view_chunks=1;
     let world=crate::world::World::new(42);let started=std::time::Instant::now();
@@ -2303,7 +2261,7 @@ pub fn vxgi(r:&mut Renderer)->Result<()> {
     }
     r.resize_targets(1,1)?;r.render(&camera,origin,0)?;
     r.settings=saved;r.resize_targets(extent.0,extent.1)?;
-    println!("VXGI passed: changed indirect lighting, exact visibility, temporal accumulation/rejection, toggles, sealed cave/range exhaustion and real skylight opening, near SVO streaming/eviction, odd/1px resize");Ok(())
+    println!("VXGI passed: changed indirect lighting, exact visibility, temporal accumulation/rejection, toggles, near SVO streaming/eviction, odd/1px resize");Ok(())
 }
 
 /// Real compute photon maps, underwater receivers, and negative lighting controls.
@@ -2432,101 +2390,4 @@ pub fn caustics(r: &mut Renderer) -> Result<()> {
     println!("Caustics passed: {occupied} source texels, {changed} underwater pixels, four energy-conserving depth slices, equal-IOR flat flux, deterministic animated waves, optical gates, far fade, covered-pool rejection, staged fine/adaptive/shallow comparisons and near-map energy. GPU map {map_ms:.3} ms");
     r.settings=saved;r.water_time=replay;r.resize_targets(extent.0,extent.1)?;
     Ok(())
-}
-
-/// Separate mask experiment: SVO-only world outside the dense near window,
-/// fixed stochastic directions, identical output, paired warmed GPU timings.
-pub fn gi_masks(r:&mut Renderer)->Result<()> {
-    let saved=r.settings;let extent=(r.width,r.height);
-    r.settings=RenderSettings{vxgi:true,gi_temporal:false,gi_fixed_seed:true,view_chunks:8,meshes:false,animate:false,shadows:false,atmosphere:false,ssao:false,water:false,caustics:false,..RenderSettings::default()};
-    r.resize_targets(320,180)?;
-    r.upload(&vec![0;GPU_VOXELS])?;r.set_mesh_scene(crate::meshes::MeshScene::empty())?;
-    let origin=IVec3::new(-(GPU_EDGE as i32)/2,MIN_Y,-(GPU_EDGE as i32)/2);
-    let world=crate::world::World::new(42);
-    let mut camera=Player::new(crate::terrain::terrain_height(512,0,42).max(SEA_LEVEL) as f32+12.0);
-    camera.feet.x=512.5;camera.feet.z=0.5;camera.pitch= -0.65;
-    let start=std::time::Instant::now();
-    loop {
-        r.prepare_lods(&camera,&world)?;r.render(&camera,origin,0)?;
-        if r.lod.as_ref().unwrap().levels.iter().sum::<usize>()==289 {break;}
-        ensure!(start.elapsed().as_secs()<30,"Mask benchmark SVO pages did not finish streaming");
-    }
-    let mut samples=[Vec::new(),Vec::new()];let mut reference=None;
-    for enabled in [false,true,true,false] {
-        r.settings.gi_face_masks=enabled;
-        for frame in 0..40 {
-            let pixels=r.render(&camera,origin,0)?.to_vec();
-            if frame==8 {
-                if let Some(ref expected)=reference {ensure!(&pixels==expected,"Stored mask changed GI rendering");}
-                else {reference=Some(pixels);}
-            }
-            if frame>=8 {samples[enabled as usize].push(r.gi_ms);}
-        }
-    }
-    let pixels=r.width.div_ceil(2) as usize*r.height.div_ceil(2) as usize;let bank=(r.shadow_frame()&1) as usize;
-    ensure!(r.gi_history_data()[bank*pixels*2..(bank+1)*pixels*2].as_chunks::<2>().0.iter().any(|v|v[1][..3].iter().any(|&c|c>0.001)),"Mask benchmark has no indirect illumination");
-    for values in &mut samples {values.sort_by(f32::total_cmp);}
-    let med=samples.each_ref().map(|v|v[v.len()/2]);
-    let bytes=r.lod.as_ref().unwrap().bytes;let nodes=(bytes-289*4)/8;
-    println!("SVO face-mask GPU A/B: 320x180, 289 pages, {nodes} nodes, {bytes} payload bytes, +0 VRAM/cache bytes; fixed-seed images identical; GI median off {:.3} ms, on {:.3} ms, gain {:+.2}% (64 samples each; headless GPU timing, not gameplay FPS)",med[0],med[1],100.0*(1.0-med[1]/med[0].max(0.00001)));
-    r.settings=saved;r.resize_targets(extent.0,extent.1)?;Ok(())
-}
-
-/// Exposed sky, sky-lit bounce, transmitting leaves and a fixed trunk point
-/// observed while moving through the reported 3-5 m range.
-pub fn gi_sky(r:&mut Renderer)->Result<()> {
-    let saved=r.settings;let extent=(r.width,r.height);
-    r.settings=RenderSettings{vxgi:true,gi_temporal:false,gi_fixed_seed:true,meshes:false,animate:false,shadows:false,atmosphere:false,ssao:false,water:false,caustics:false,sun_intensity:0.0,..RenderSettings::default()};
-    r.resize_targets(129,97)?;
-    let origin=IVec3::new(-(GPU_EDGE as i32)/2,MIN_Y,-(GPU_EDGE as i32)/2);
-    let mut blocks=vec![0;GPU_VOXELS];
-    for z in -30..=30 {for x in -30..=30 {put(&mut blocks,origin,IVec3::new(x,98,z),4);}}
-    // Forces world-height-320 rays to leave the near volume before their old
-    // escape condition, without actually occluding the tested surfaces.
-    put(&mut blocks,origin,IVec3::new(-140,319,-140),1);
-    r.upload(&blocks)?;r.set_mesh_scene(crate::meshes::MeshScene::empty())?;
-    let mut camera=Player::new(102.0-1.62);camera.feet.x=0.5;camera.feet.z=0.5;camera.pitch= -std::f32::consts::FRAC_PI_2;
-    let receiver=|r:&Renderer| {
-        let w=r.width.div_ceil(2) as usize;let h=r.height.div_ceil(2) as usize;let bank=(r.shadow_frame()&1) as usize;
-        let i=(r.width as usize/2/2)+w*(r.height as usize/2/2);
-        let v=r.gi_history_data()[(bank*w*h+i)*2+1];Vec3::new(v[0],v[1],v[2])
-    };
-    r.render(&camera,origin,0)?;let sky=receiver(r);
-    ensure!(sky.z>0.15,"Exposed primary receiver lost skylight: {sky:?}");
-    for z in -3..=3 {for x in -3..=3 {put(&mut blocks,origin,IVec3::new(x,104,z),1);}}
-    r.upload(&blocks)?;camera.pitch=std::f32::consts::FRAC_PI_2;
-    r.render(&camera,origin,0)?;let bounce=receiver(r);
-    ensure!(bounce.z>0.005,"Downward receiver lost sky-lit floor bounce: {bounce:?}");
-    for z in -3..=3 {for x in -3..=3 {put(&mut blocks,origin,IVec3::new(x,104,z),0);}}
-    for y in 99..=106 {put(&mut blocks,origin,IVec3::new(0,y,0),6);}
-    for y in 106..=107 {for z in -3..=3 {for x in -3..=3 {put(&mut blocks,origin,IVec3::new(x,y,z),13);}}}
-    r.upload(&blocks)?;camera.feet.y=101.5-1.62;camera.pitch=0.0;camera.yaw=0.0;
-    let mut baseline=Vec3::ZERO;
-    for distance in [8.0,5.0,4.0,3.0,2.0,1.0] {
-        camera.feet.z=1.0+distance;r.render(&camera,origin,0)?;let sample=receiver(r);
-        ensure!(sample.z>0.005,"Canopy trunk lost indirect sky at {distance}m: {sample:?}");
-        if baseline==Vec3::ZERO {baseline=sample;}
-        ensure!((sample-baseline).length()<0.003,"View distance changed fixed-point GI: {distance}m {baseline:?} -> {sample:?}");
-    }
-    r.settings.gi_temporal=true;let mut last=baseline;
-    for frame in 0..64 {
-        let distance=8.0-7.0*frame as f32/63.0;
-        camera.feet.z=1.0+distance;r.render(&camera,origin,0)?;let sample=receiver(r);
-        ensure!((sample-last).length()<0.025,"Moving trunk history jumped near {distance}m: {last:?} -> {sample:?}");
-        ensure!((sample-baseline).length()<0.025,"Approaching trunk history darkened near {distance}m: {baseline:?} -> {sample:?}");
-        last=sample;
-    }
-    // Repeat with the real rotating sampler, comparing averaged lighting at the
-    // same world point instead of confusing Monte Carlo noise with distance.
-    r.settings.gi_fixed_seed=false;camera.feet.z=9.0;
-    for _ in 0..32 {r.render(&camera,origin,0)?;}
-    let mut early=Vec3::ZERO;let mut late=Vec3::ZERO;
-    for frame in 0..128 {
-        camera.feet.z=9.0-7.0*frame as f32/127.0;r.render(&camera,origin,0)?;let sample=receiver(r);
-        if frame<32 {early+=sample/32.0;}
-        if frame>=96 {late+=sample/32.0;}
-    }
-    ensure!(late.z>early.z*0.65 && late.z<early.z*1.5,"Rotating GI history darkened with approach: {early:?} -> {late:?}");
-    println!("GI sky passed: exposed {sky:?}, sky-bounce {bounce:?}, leaf transmission and fixed trunk {baseline:?}, 8-to-1m raw/history continuity; rotating history {early:?} -> {late:?}");
-    r.settings=saved;r.resize_targets(extent.0,extent.1)?;Ok(())
 }

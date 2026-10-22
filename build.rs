@@ -73,8 +73,6 @@ fn main() {
             source.push_str(&fs::read_to_string("shaders/meshes.wgsl").unwrap());
         }
         println!("cargo:rerun-if-changed=shaders/meshes.wgsl");
-        if name=="vxgi" || name=="shade" {source.push_str(&fs::read_to_string("shaders/gi_trace.wgsl").unwrap());}
-        println!("cargo:rerun-if-changed=shaders/gi_trace.wgsl");
         if name=="water" || name=="caustics" {
             source.push_str(&fs::read_to_string("shaders/wave_field.wgsl").unwrap());
         }
